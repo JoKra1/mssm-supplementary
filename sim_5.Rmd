@@ -1,0 +1,129 @@
+---
+title: "Sim 5 mgcv"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(mgcv)
+
+options(warn=-1)
+```
+
+## Simulation 5
+
+```{r sim2}
+n_sim <- 100
+n_c <- 10
+nR <- 250
+df <- 40
+scale <- 2
+fam_names <- c("Gaussian","Binomial","Gamma")
+mod_fams <- list(gaussian(),binomial(),Gamma(link='log'))
+
+
+for (fami in 1:length(fam_names)) {
+  fam_name <- fam_names[fami]
+  mod_fam <- mod_fams[[fami]]
+  binom_offset <- ifelse(fam_name != "Binomial",0,-5)
+  
+  res <- matrix(data=0,nrow=n_c,ncol = 1)
+  
+  for (ci in 1:10) {
+    pb = txtProgressBar(min = 0, max = n_sim, initial = 0)
+    
+    for (sim_i in 1:n_sim) {
+      # Load data
+      sim_dat <- read.csv(paste0('./results/data/sim5/sim_size:',n_sim,'_c:',(ci-1),'_fam:',fam_name,'_nR:',nR,'_df:',df,'_scale:',scale,'_binomoffset:',binom_offset,'_set:',sim_i-1,'.csv'))
+      sim_dat$x4 <- as.factor(sim_dat$x4)
+  
+      # Fit both models via Wood (2011)
+      control.g <- gam.control(maxit=500)
+      g1 <- gam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                    s(x1,bs='ps',m=c(2,2)) +
+                    s(x2,bs='ps',m=c(2,2)) +
+                    s(x3,bs='ps',m=c(2,2)) +
+                    s(x4,bs='re'),data=sim_dat,family = mod_fam,method='REML',control = control.g)
+      
+      g2 <- gam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                    s(x1,bs='ps',m=c(2,2)) +
+                    s(x2,bs='ps',m=c(2,2)) +
+                    s(x3,bs='ps',m=c(2,2)),data=sim_dat,family = mod_fam,method='REML',control = control.g)
+      
+  
+      aic_diff <- AIC(g1) - AIC(g2)
+      res[ci,1] <- res[ci,1] + ifelse(aic_diff < 0,1,0)
+      
+      setTxtProgressBar(pb,sim_i)
+    }
+    res[ci,1] <- res[ci,1] / n_sim
+    close(pb)
+    cat("ACC (gam):",res[ci,1],"\n")
+    
+  }
+  
+  # Store results
+  write.table(res,file=paste0('./results/sim/mgcv_sim_5_size:',n_sim,'_n_c:',n_c,'_fam:',fam_name,'_nR:',nR,'_df:',df,'_scale:',scale,'_binomoffset:',binom_offset,'.csv'),
+              sep=',',row.names = F,col.names = c("gam_acc"))
+  
+  plot(1:10,res[,1],ylim=c(0,1))
+}
+
+```
+
+```{r}
+n_sim <- 100
+n_c <- 10
+nR <- 250
+df <- 40
+scale <- 2
+fam_names <- c("PropHaz")
+
+for (fami in 1:length(fam_names)) {
+  fam_name <- fam_names[fami]
+  
+  res <- matrix(data=0,nrow=n_c,ncol = 1)
+  
+  for (ci in 1:10) {
+    pb = txtProgressBar(min = 0, max = n_sim, initial = 0)
+    
+    for (sim_i in 1:n_sim) {
+      # Load data
+      sim_dat <- read.csv(paste0('./results/data/sim5/sim_size:',n_sim,'_c:',(ci-1),'_fam:',fam_name,'_nR:',nR,'_df:',df,'_scale:',scale,'_set:',sim_i-1,'.csv'))
+      sim_dat$x4 <- as.factor(sim_dat$x4)
+  
+      # Fit both models via Wood et al. (2016)
+      control.g <- gam.control(maxit=500)
+      g1 <- gam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                    s(x1,bs='ps',m=c(2,2)) +
+                    s(x2,bs='ps',m=c(2,2)) +
+                    s(x3,bs='ps',m=c(2,2)) +
+                    s(x4,bs='re'),data=sim_dat,family = cox.ph(),weights=delta,method='REML',control = control.g)
+      
+      g2 <- gam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                    s(x1,bs='ps',m=c(2,2)) +
+                    s(x2,bs='ps',m=c(2,2)) +
+                    s(x3,bs='ps',m=c(2,2)),data=sim_dat,family = cox.ph(),weights=delta,method='REML',control = control.g)
+      
+  
+      aic_diff <- AIC(g1) - AIC(g2)
+      res[ci,1] <- res[ci,1] + ifelse(aic_diff < 0,1,0)
+      
+      setTxtProgressBar(pb,sim_i)
+    }
+    res[ci,1] <- res[ci,1] / n_sim
+    close(pb)
+    cat("ACC (gam):",res[ci,1],"\n")
+    
+  }
+  
+  # Store results
+  write.table(res,file=paste0('./results/sim/mgcv_sim_5_size:',n_sim,'_n_c:',n_c,'_fam:',fam_name,'_nR:',nR,'_df:',df,'_scale:',scale,'.csv'),
+              sep=',',row.names = F,col.names = c("gam_acc"))
+  
+  plot(1:10,res[,1],ylim=c(0,1))
+}
+
+```

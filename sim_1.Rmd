@@ -1,0 +1,139 @@
+---
+title: "Sim 1 mgcv"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(mgcv)
+
+options(warn=-1)
+```
+
+## Simulation 1
+
+```{r sim1}
+n_sim <- 100
+fam_names <- c("Gaussian","Binom","Gamma")
+mod_fams <- list(gaussian(),binomial(),Gamma(link='log'))
+
+
+for (fami in 1:length(fam_names)) {
+  fam_name <- fam_names[fami]
+  mod_fam <- mod_fams[[fami]]
+  
+  res <- matrix(nrow=n_sim,ncol = 8)
+  
+  pb = txtProgressBar(min = 0, max = n_sim, initial = 0)
+  
+  for (sim_i in 1:n_sim) {
+    # Load data
+    sim_dat <- read.csv(paste0('./results/data/sim1/sim_size:',n_sim,'_fam:',fam_name,'_set:',sim_i-1,'.csv'))
+    sim_dat$x4 <- as.factor(sim_dat$x4)
+    
+    # Fit model via Wood (2011)
+    control.g <- gam.control(maxit=500)
+    gTime <- system.time(g <- gam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                                      s(x1,bs='ps',m=c(2,2)) +
+                                      s(x2,bs='ps',m=c(2,2)) +
+                                      s(x3,bs='ps',m=c(2,2)) +
+                                      s(x0,x4,bs='fs',xt=list(bs="ps"),m=c(2,1)),
+                                  data=sim_dat,family = mod_fam,method='REML',
+                                  control = control.g),
+                         gcFirst = F)
+    
+    # and Wood et al. (2015), i.e., via PQL
+    control.b <- gam.control(maxit=1000)
+    bTime <- system.time(b <- bam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                                      s(x1,bs='ps',m=c(2,2)) +
+                                      s(x2,bs='ps',m=c(2,2)) +
+                                      s(x3,bs='ps',m=c(2,2)) +
+                                      s(x0,x4,bs='fs',xt=list(bs="ps"),m=c(2,1)),
+                                  data=sim_dat,family = mod_fam,method='fREML',
+                                  control = control.b,use.chol = T),
+                         gcFirst = F)
+    
+    # Now compute linear predictor - true linear predictor
+    pred_diff_g <- g$linear.predictors - sim_dat$eta
+    pred_diff_b <- b$linear.predictors - sim_dat$eta
+    
+    # And collect mse
+    eta_mse_g <- (pred_diff_g %*% pred_diff_g)/length(pred_diff_g)
+    eta_mse_b <- (pred_diff_b %*% pred_diff_b)/length(pred_diff_b)
+    
+    res[sim_i,1] <- eta_mse_g
+    res[sim_i,2] <- eta_mse_b
+    res[sim_i,3] <- ifelse(g$outer.info$conv == "full convergence",1,0)
+    res[sim_i,4] <- ifelse(fam_name == "Gaussian", ifelse(b$outer.info$conv == "full convergence",1,0) ,ifelse(b$iter < 1000,1,0) )
+    res[sim_i,5] <- g$outer.info$iter
+    res[sim_i,6] <- ifelse(fam_name == "Gaussian", b$outer.info$iter,b$iter)
+    res[sim_i,7] <- gTime[names(gTime) == "user.self"]
+    res[sim_i,8] <- bTime[names(bTime) == "user.self"]
+    
+    setTxtProgressBar(pb,sim_i)
+  }
+  close(pb)
+  cat("MSE (gam, bam):",colSums(res[,1:2])/n_sim,"\n")
+  cat("Failures (gam, bam):",n_sim - colSums(res[,3:4]),"\n")
+  
+  # Store results
+  write.table(res,file=paste0('./results/sim/mgcv_sim_1_size:',n_sim,'_fam:',fam_name,'.csv'),
+              sep=',',row.names = F,col.names = c("gam_mse","bam_mse","gam_conv","bam_conv","gam_iter","bam_iter","gam_time","bam_time"))
+}
+
+```
+
+```{r}
+n_sim <- 100
+fam_names <- c("PropHaz")
+
+for (fami in 1:length(fam_names)) {
+  fam_name <- fam_names[fami]
+  
+  res <- matrix(nrow=n_sim,ncol = 4)
+  
+  pb = txtProgressBar(min = 0, max = n_sim, initial = 0)
+  
+  for (sim_i in 1:n_sim) {
+    # Load data
+    sim_dat <- read.csv(paste0('./results/data/sim1/sim_size:',n_sim,'_fam:',fam_name,'_set:',sim_i-1,'.csv'))
+    sim_dat$x4 <- as.factor(sim_dat$x4)
+    
+    # Fit model via Wood et al. (2016)
+    control.g <- gam.control(maxit=500)
+    gTime <- system.time(g <- gam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                                      s(x1,bs='ps',m=c(2,2)) +
+                                      s(x2,bs='ps',m=c(2,2)) +
+                                      s(x3,bs='ps',m=c(2,2)) +
+                                      s(x0,x4,bs='fs',xt=list(bs="ps"),m=c(2,1)),
+                                  data=sim_dat,family = cox.ph(),weights=delta,method='REML',control = control.g),
+                         gcFirst = F)
+    
+    # Now compute linear predictor - true linear predictor
+    pred_diff_g <- g$linear.predictors - sim_dat$eta
+    
+    # And collect mse
+    eta_mse_g <- (pred_diff_g %*% pred_diff_g)/length(pred_diff_g)
+    
+    res[sim_i,1] <- eta_mse_g
+    res[sim_i,2] <- ifelse(g$outer.info$conv == "full convergence",1,0)
+    res[sim_i,3] <- g$outer.info$iter
+    res[sim_i,4] <- gTime[names(gTime) == "user.self"]
+    
+    setTxtProgressBar(pb,sim_i)
+    
+  }
+}
+close(pb)
+cat("MSE (gam):",sum(res[,1])/n_sim,",",sd(res[,1]),"\n")
+cat("Failures (gam):",n_sim - sum(res[,2]),"\n")
+
+# Store results
+  write.table(res,file=paste0('./results/sim/mgcv_sim_1_size:',n_sim,'_fam:',fam_name,'.csv'),
+              sep=',',row.names = F,col.names = c("gam_mse","gam_conv","gam_iter","gam_time"))
+  
+
+
+```

@@ -1,0 +1,128 @@
+---
+title: "Sim 2 mgcv"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(mgcv)
+
+options(warn=-1)
+```
+
+## Simulation 2
+
+```{r sim2}
+n_sim <- 500
+fam_names <- c("Gaussian","Binom","Gamma")
+mod_fams <- list(gaussian(),binomial(),Gamma(link='log'))
+
+for (should_correlate in c(T,F)) {
+  
+  for (fami in 1:length(fam_names)) {
+    fam_name <- fam_names[fami]
+    mod_fam <- mod_fams[[fami]]
+    
+    res <- matrix(nrow=n_sim,ncol = 6)
+    
+    pb = txtProgressBar(min = 0, max = n_sim, initial = 0)
+    
+    for (sim_i in 1:n_sim) {
+      # Load data
+      sim_dat <- read.csv(paste0('./results/data/sim2/sim_size:',n_sim,'_fam:',fam_name,'_corr:',ifelse(should_correlate,'True','False'),'_set:',sim_i-1,'.csv'))
+  
+      # Fit model via Wood (2011)
+      control.g <- gam.control(maxit=500)
+      g <- gam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                   s(x1,bs='ps',m=c(2,2)) +
+                   s(x2,bs='ps',m=c(2,2)) +
+                   s(x3,bs='ps',m=c(2,2)),data=sim_dat,family = mod_fam,method='REML',
+                   control = control.g)
+      
+      # and Wood et al. (2017), i.e., via PQL
+      control.b <- gam.control(maxit=1000)
+      b <- bam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                   s(x1,bs='ps',m=c(2,2)) +
+                   s(x2,bs='ps',m=c(2,2)) +
+                   s(x3,bs='ps',m=c(2,2)),data=sim_dat,family = mod_fam,method='fREML',
+                   control = control.b,use.chol=T)
+      
+      # Now compute linear predictor - true linear predictor
+      pred_diff_g <- g$linear.predictors - sim_dat$eta
+      pred_diff_b <- b$linear.predictors - sim_dat$eta
+      
+      # And collect mse
+      eta_mse_g <- (pred_diff_g %*% pred_diff_g)/length(pred_diff_g)
+      eta_mse_b <- (pred_diff_b %*% pred_diff_b)/length(pred_diff_b)
+      
+      res[sim_i,1] <- eta_mse_g
+      res[sim_i,2] <- eta_mse_b
+      res[sim_i,3] <- ifelse(g$outer.info$conv == "full convergence",1,0)
+      res[sim_i,4] <- ifelse(fam_name == "Gaussian", ifelse(b$outer.info$conv == "full convergence",1,0) ,ifelse(b$iter < 1000,1,0) )
+      res[sim_i,5] <- g$outer.info$iter
+      res[sim_i,6] <- ifelse(fam_name == "Gaussian", b$outer.info$iter,b$iter)
+      
+      setTxtProgressBar(pb,sim_i)
+    }
+    close(pb)
+    cat("MSE (gam, bam):",colSums(res[,1:2])/n_sim,"\n")
+    cat("Failures (gam, bam):",n_sim - colSums(res[,3:4]),"\n")
+    
+    # Store results
+    write.table(res,file=paste0('./results/sim/mgcv_sim_2_size:',n_sim,'_fam:',fam_name,'_corr:',ifelse(should_correlate,'True','False'),'.csv'),
+                sep=',',row.names = F,col.names = c("gam_mse","bam_mse","gam_conv","bam_conv","gam_iter","bam_iter"))
+  }
+}
+```
+
+```{r}
+n_sim <- 500
+fam_names <- c("PropHaz")
+
+for (should_correlate in c(T,F)) {
+  
+  for (fami in 1:length(fam_names)) {
+    fam_name <- fam_names[fami]
+    
+    res <- matrix(nrow=n_sim,ncol = 3)
+    
+    pb = txtProgressBar(min = 0, max = n_sim, initial = 0)
+    
+    for (sim_i in 1:n_sim) {
+      # Load data
+      sim_dat <- read.csv(paste0('./results/data/sim2/sim_size:',n_sim,'_fam:',fam_name,'_corr:',ifelse(should_correlate,'True','False'),'_set:',sim_i-1,'.csv'))
+  
+      # Fit model via Wood et al. (2016)
+      control.g <- gam.control(maxit=500)
+      g <- gam(y ~ s(x0,bs='ps',m=c(2,2)) +
+                   s(x1,bs='ps',m=c(2,2)) +
+                   s(x2,bs='ps',m=c(2,2)) +
+                   s(x3,bs='ps',m=c(2,2)),data=sim_dat,family = cox.ph(),weights=delta,method='REML',control = control.g)
+      
+      # Now compute linear predictor - true linear predictor
+      pred_diff_g <- g$linear.predictors - sim_dat$eta
+      
+      # And collect mse
+      eta_mse_g <- (pred_diff_g %*% pred_diff_g)/length(pred_diff_g)
+      
+      res[sim_i,1] <- eta_mse_g
+      res[sim_i,2] <- ifelse(g$outer.info$conv == "full convergence",1,0)
+      res[sim_i,3] <- g$outer.info$iter
+      
+      setTxtProgressBar(pb,sim_i)
+      
+    }
+  }
+  close(pb)
+  cat("MSE (gam):",sum(res[,1])/n_sim,",",sd(res[,1]),"\n")
+  cat("Failures (gam):",n_sim - sum(res[,2]),"\n")
+  
+  # Store results
+    write.table(res,file=paste0('./results/sim/mgcv_sim_2_size:',n_sim,'_fam:',fam_name,'_corr:',ifelse(should_correlate,'True','False'),'.csv'),
+                sep=',',row.names = F,col.names = c("gam_mse","gam_conv","gam_iter"))
+  
+}
+
+```
