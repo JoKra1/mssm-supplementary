@@ -194,3 +194,8 @@ cython_debug/
 .cursorindexingignore
 
 results/*
+
+renv/*
+*.Rprofile
+*.md
+*.lock
